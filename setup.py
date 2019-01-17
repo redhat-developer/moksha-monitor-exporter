@@ -32,7 +32,7 @@ if _:
 setup(name='moksha-monitor-exporter',
       description=('A nanoservice written in Python providing Prometheus '
                    'export(s) from moksha.monitoring.socket data.'),
-      version='0.0.1dev0',
+      version='0.0.1',
       classifiers=[
           "Programming Language :: Python",
       ],
