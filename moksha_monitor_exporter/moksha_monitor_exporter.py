@@ -119,7 +119,7 @@ def root():
     return (
         '<h1>Welcome to moksha.monitoring.socket exporter for Prometheus!</h1>'
         'Please follow this link: '
-        '<a href="' + metrics_path + '">' + metrics_path + '</a>')
+        '<a href="' + metrics_path + '">' + metrics_path + '</a>\n')
 
 
 @app.route('/shutdown', methods=['POST'])
@@ -138,27 +138,27 @@ def metrics():
     """
     Provide endpoint for Prometheus.
     """
-    if 'target' in request.args and 'port' in request.args:
-        try:
-            1 / int(1 < int(request.args['port']) < 65536)
-        except Exception:
-            raise BadRequest("Please provide valid TCP port number.")
-
-        target = request.args['target']
-        port = request.args['port']
-        for thread in threading.enumerate():
-            if worker_thread_prefix + target == str(thread):
-                return thread.export() + export_my_metrics()
-        if worker_threads_count() >= max_threads:
-            raise TooManyRequests("Limit of threads reached.")
-        thread = MokshaMonitorExporter(target, port)
-        thread.start()
-        # Let's wait 5 seconds, because it takes some time to connect
-        # to moksha.monitoring.socket and receive data.
-        time.sleep(5)
-        return thread.export() + export_my_metrics()
-    else:
+    if not ('target' in request.args and 'port' in request.args):
         raise BadRequest("Please provide 'target' and 'port' parameters.")
+
+    try:
+        1 / int(1 < int(request.args['port']) < 65536)
+    except Exception:
+        raise BadRequest("Please provide valid TCP port number.")
+
+    target = request.args['target']
+    port = request.args['port']
+    for thread in threading.enumerate():
+        if worker_thread_prefix + target == str(thread):
+            return thread.export() + export_my_metrics()
+    if worker_threads_count() >= max_threads:
+        raise TooManyRequests("Limit of threads reached.")
+    thread = MokshaMonitorExporter(target, port)
+    thread.start()
+    # Let's wait 5 seconds, because it takes some time to connect
+    # to moksha.monitoring.socket and receive data.
+    time.sleep(5)
+    return thread.export() + export_my_metrics()
 
 
 if __name__ == '__main__':
