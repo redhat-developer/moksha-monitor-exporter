@@ -3,9 +3,10 @@ import threading
 import time
 import zmq
 
-from flask import Flask, request, abort
+from flask import Flask, request, abort, Response
 from prometheus_client import (
-    generate_latest, CollectorRegistry, ProcessCollector, Gauge)
+    generate_latest, CollectorRegistry, ProcessCollector, Gauge,
+    CONTENT_TYPE_LATEST)
 from werkzeug.exceptions import BadRequest, TooManyRequests
 
 ip_allow_shutdown_from = ('127.0.0.1', '::1',)
@@ -22,7 +23,7 @@ class MokshaMonitorExporter(threading.Thread):
         super(MokshaMonitorExporter, self).__init__()
         self.target = target
         self.port = port
-        self.name = self.target
+        self.name = worker_thread_prefix + self.target
 
         self.prometheus_registry = CollectorRegistry()
         self.prometheus_gauge_producers_last_ran = Gauge(
@@ -44,9 +45,6 @@ class MokshaMonitorExporter(threading.Thread):
             my_name + '_consumers_backlog', 'Backlog queue size.',
             ['name', 'module', 'topic'], registry=self.prometheus_registry)
 
-    def __repr__(self):
-        return worker_thread_prefix + self.name
-
     def run(self):
         """
         Connect to moksha.monitoring.socket and start receiving data.
@@ -54,7 +52,12 @@ class MokshaMonitorExporter(threading.Thread):
         context = zmq.Context()
         socket = context.socket(zmq.SUB)
         socket.connect('tcp://{}:{}'.format(self.target, self.port))
-        socket.setsockopt_string(zmq.SUBSCRIBE, '')
+        try:
+            # Python 2
+            socket.setsockopt(zmq.SUBSCRIBE, b'')
+        except TypeError:
+            # Python 3
+            socket.setsockopt_string(zmq.SUBSCRIBE, b'')
         while True:
             self.data = json.loads(socket.recv())
 
@@ -90,14 +93,16 @@ def worker_threads_count():
     Return number of active MokshaMonitorExporter() threads.
     """
     return len(
-        [str(thread) for thread in threading.enumerate()
-         if str(thread).startswith(worker_thread_prefix)])
+        [thread.name for thread in threading.enumerate()
+         if thread.name.startswith(worker_thread_prefix)])
 
 
-def export_my_metrics():
+@app.route('/my-metrics', methods=['GET'])
+def export_my_metrics(backend_connected=False):
     """
     Return self-metrics as Prometheus export.
     """
+    backend_up_value = '1.0' if backend_connected else '0.0'
     registry = CollectorRegistry()
     g = Gauge(
         my_name + '_threads',
@@ -106,9 +111,21 @@ def export_my_metrics():
     g.set(worker_threads_count())
     ProcessCollector(namespace=my_name, registry=registry)
     return generate_latest(registry).decode() + (
-        '# HELP ' + my_name + '_up Show that we\'re up and running!\n'
+        '# HELP ' + my_name + '_up Show that we\'re connected to the backend!\n'
         '# TYPE ' + my_name + '_up untyped\n'
-        '' + my_name + '_up 1.0\n')
+        '' + my_name + '_up ' + backend_up_value + '\n')
+
+
+def export_all(thread):
+    """
+    Return full Prometheus export for a given thread incl. self-metrics.
+    """
+    try:
+        return Response(
+            thread.export() + export_my_metrics(backend_connected=True),
+            content_type=CONTENT_TYPE_LATEST)
+    except Exception:
+        return Response(export_my_metrics(), content_type=CONTENT_TYPE_LATEST)
 
 
 @app.route('/', methods=['GET'])
@@ -149,16 +166,16 @@ def metrics():
     target = request.args['target']
     port = request.args['port']
     for thread in threading.enumerate():
-        if worker_thread_prefix + target == str(thread):
-            return thread.export() + export_my_metrics()
+        if worker_thread_prefix + target == thread.name:
+            return export_all(thread)
     if worker_threads_count() >= max_threads:
         raise TooManyRequests("Limit of threads reached.")
     thread = MokshaMonitorExporter(target, port)
     thread.start()
-    # Let's wait 5 seconds, because it takes some time to connect
+    # Let's wait for 5 seconds, because it takes some time to connect
     # to moksha.monitoring.socket and receive data.
     time.sleep(5)
-    return thread.export() + export_my_metrics()
+    return export_all(thread)
 
 
 if __name__ == '__main__':

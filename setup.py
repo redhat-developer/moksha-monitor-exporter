@@ -2,6 +2,7 @@
 
 import os
 from setuptools import setup, find_packages
+from version import _VERSION_
 
 
 def read_requirements(filename):
@@ -32,7 +33,7 @@ if _:
 setup(name='moksha-monitor-exporter',
       description=('A nanoservice written in Python providing Prometheus '
                    'export(s) from moksha.monitoring.socket data.'),
-      version='0.0.1',
+      version=_VERSION_,
       classifiers=[
           "Programming Language :: Python",
       ],
