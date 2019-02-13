@@ -34,7 +34,7 @@ class TestServer():
         Test some nonexisting target.
         """
         r = session.get('http://127.0.0.1:5000/metrics?target='
-                        'moksha.monitoring.socket.example.com&port=10040')
+                        'moksha.monitoring.socket.example.com&port=10030')
         assert 'moksha_monitor_exporter_threads 1.0' in r.text
         assert 'moksha_monitor_exporter_up 0.0' in r.text
 
